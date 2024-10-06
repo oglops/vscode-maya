@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 var net = require('net');
-import TelemetryReporter from 'vscode-extension-telemetry';
+import TelemetryReporter from '@vscode/extension-telemetry';
 
 let mayaportStatusBar: vscode.StatusBarItem;
 let socket_mel: Socket;
@@ -51,36 +51,80 @@ export class TimeUtils {
 
 export class Logger {
 	private static _outputPanel;
+	private static _logVisibility: boolean = true; // Control visibility for `info`, `error`, and `success`
+	private static _includeTimestamp: boolean = true; // Control whether to include a timestamp
 
 	public static registerOutputPanel(outputPanel: vscode.OutputChannel) {
 		this._outputPanel = outputPanel;
 	}
 
+	// Set log visibility (can toggle on or off)
+	public static setLogVisibility(isVisible: boolean) {
+		this._logVisibility = isVisible;
+	}
+
+	// Info logs (only shown if visibility is enabled)
 	public static info(log: string) {
-		this.typeLog(log, 'INFO');
+		if (this._logVisibility) {
+			this.typeLog(log, 'INFO');
+		}
 	}
 
+	// Error logs (only shown if visibility is enabled)
 	public static error(log: string) {
-		this.typeLog(log, 'ERROR');
-		vscode.window.showErrorMessage(log);
+		if (this._logVisibility) {
+			this.typeLog(log, 'ERROR');
+			vscode.window.showErrorMessage(log);
+		}
 	}
 
-	public static success(log: String) {
-		this.typeLog(log, 'SUCCESS');
+	// Success logs (only shown if visibility is enabled)
+	public static success(log: string) {
+		if (this._logVisibility) {
+			this.typeLog(log, 'SUCCESS');
+		}
 	}
 
-	public static response(log: String) {
-		this.typeLog(log, 'RESPONSE');
+	// Response logs (always visible, without timestamp)
+	public static response(log: string) {
+		let cleanedLog = this.cleanLog(log);
+		if (this.isValidLog(cleanedLog)) {  // Always check validity
+			this._outputPanel.appendLine(cleanedLog);
+		}
 	}
 
-	private static typeLog(log: String, type: String) {
+	private static cleanLog(log: string | null | undefined): string | null {
+		if (log === null || log === undefined) return null;
+		
+		// Remove all types of whitespace including newlines
+		return log.replace(/\0/g, '').replace(/[\r\n]+/g, '\n').trim(); // Replace newlines with a space, then trim
+	}
+
+	private static typeLog(log: String, type: String, includeTimestamp: boolean = true) {
 		if (!this._outputPanel) {
 			return;
 		}
 		let util = require('util');
-		let time = TimeUtils.getTime();
+		let time = includeTimestamp ? TimeUtils.getTime() : '';  // Add timestamp only if required
 		if (!log || !log.split) return;
-		this._outputPanel.appendLine(util.format('MayaCode-%s [%s][%s]\t %s', extensionVersion, time, type, log));
+		let formattedLog = log;
+
+		// Handle timestamp exclusion for response logs
+		if (includeTimestamp) {
+			formattedLog = util.format('[%s][%s]\t %s', time, type, log);
+		}
+
+		this._outputPanel.appendLine(formattedLog);
+	}
+
+	// Check if a log message is valid
+	private static isValidLog(log: string | null | undefined): boolean {
+		// Log a message if null or undefined is being passed for easier debugging
+		if (log === null || log === undefined || log.trim() === '') {
+			console.warn(`[Logger] Invalid log passed: ${log}`);
+			return false;  // Do not log empty, null, or undefined messages
+		}
+		return true;
 	}
 }
 
@@ -198,10 +242,20 @@ export function activate(context: vscode.ExtensionContext) {
 	const timeOpened = Date.now()
 
 	var config = vscode.workspace.getConfiguration('mayacode');
+	const verboseLogging = config.get<boolean>('logging.verbose', false);
+	Logger.setLogVisibility(verboseLogging);
+
+    // Register to listen for configuration changes and update log visibility dynamically
+    vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('mayacode.logging.verbose')) {
+            const updatedVerboseLogging = config.get<boolean>('logging.verbose', false);
+            Logger.setLogVisibility(updatedVerboseLogging);
+        }
+    });
 
 	// create telemetry reporter on extension activation
 	// ensure it gets property disposed
-	reporter = new TelemetryReporter(extensionId, extensionVersion, key);
+	reporter = new TelemetryReporter(extensionId, extensionVersion);
 	context.subscriptions.push(reporter);
 	reporter.sendTelemetryEvent('start', {})
 
@@ -209,7 +263,7 @@ export function activate(context: vscode.ExtensionContext) {
 		if(config.get('telemetry')){
 			if(error.stack == lastStackTrace) return
 			Logger.info(`Sending error event`);
-			reporter.sendTelemetryException(error, {
+			reporter.sendTelemetryEvent('exception', {
                 code: code.toString(),
                 category,
 			})
@@ -280,6 +334,21 @@ export function activate(context: vscode.ExtensionContext) {
 		return socket;
 	}
 
+    function dedent(text: string) {
+        // Match the common leading whitespace of all non-empty lines
+        const match = text.match(/^[ \t]*(?=\S)/gm);
+        
+        if (!match) return text; // Return as is if no match
+    
+        // Find the minimum leading whitespace
+        const indent = Math.min(...match.map(el => el.length));
+    
+        // Remove that amount of leading whitespace from every line
+        const dedentedText = text.replace(new RegExp(`^[ \\t]{${indent}}`, 'gm'), '');
+        
+        return dedentedText;
+    }
+
 	function send_tmp_file(text: string, type: string) {
 		let cmd:string, nativePath:string, posixPath:string;
 		var start = new Date().getTime();
@@ -328,17 +397,63 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	}
 
-	function getText(type: string) {
+	function getText(type: string, current_line: boolean = false) {
 		let editor = vscode.window.activeTextEditor;
 		let selection = editor.selection;
 		let text: string;
+		const languageId = editor.document.languageId;
 
 		if (selection.isEmpty != true) {
 			Logger.info(`Sending selected ${type} code to maya`);
-			text = editor.document.getText(selection);
+			let selectedText = editor.document.getText(selection);
+			
+			// Check if the selection is on a single line
+			const isSingleLine = selection.start.line === selection.end.line;
+
+			// Check if the selected text has no spaces or is a single word
+			const isSingleWord = /^[^\s]+$/.test(selectedText);
+
+			let selectedTextTrim = selectedText.trim();
+
+			if (isSingleLine && isSingleWord) {
+				if (languageId === 'mel' && (!selectedTextTrim.startsWith('$'))) {
+						text = `print($${selectedTextTrim});`
+				}
+				else
+					text = `print(${selectedTextTrim});`
+
+			}
+			else {
+				// Get the start position of the selection
+				let selectionStart = selection.start;
+
+				// Get all text from the beginning of the line to the selection start position
+				let lineText = editor.document.getText(new vscode.Range(selectionStart.line, 0, selectionStart.line, selectionStart.character));
+		
+				// Use regex to match whitespace from the start of the line up to the selection start
+				let leadingWhitespace = lineText.match(/^[\s\t]*/); // Match spaces or tabs at the beginning of the string
+
+				// Combine the leading whitespace and selected text
+				text = (leadingWhitespace ? leadingWhitespace[0] : '') + selectedText;
+
+				text = dedent(text);
+			}
+		
 		} else {
-			Logger.info(`Sending all ${type} code to maya`);
-			text = editor.document.getText();
+			if (current_line == true) {
+				Logger.info(`Sending current line of ${type} code to maya`);
+				// Get the cursor position
+				const position = editor.selection.active;
+
+				// Get the entire text of the current line
+				const lineText = editor.document.lineAt(position.line).text;
+		
+				// Return the trimmed text (leading/trailing spaces removed)
+				text = lineText.trim();
+			} else {
+				Logger.info(`Sending all ${type} code to maya`);
+				text = editor.document.getText();
+			}
 		}
 		return text;
 	}
@@ -494,6 +609,19 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	context.subscriptions.push(command_py);
+
+	const command_line = vscode.commands.registerCommand('mayacode.sendCurrentLineToMaya', function() {
+		socket_mel = ensureConnection('python');
+		const editor = vscode.window.activeTextEditor;
+		if (!socket_mel.destroyed && editor) {
+			const languageId = editor.document.languageId;
+			let text = getText(languageId, true);
+			send_tmp_file(text, languageId);
+		}
+	});
+
+	context.subscriptions.push(command_py);
+	
 
 	mayaportStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 	context.subscriptions.push(mayaportStatusBar);

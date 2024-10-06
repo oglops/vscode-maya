@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 1.5.1 (October 7, 2024)
+* Enhancement: Send current line to Maya
+* Enhancement: Print selected variable
+* Enhancement: Send multiple lines to Maya ignoring first line leading spaces
+
 ## Version 1.5.0 (October 30, 2021)
 * Enhancement: Add support for Maya 2022 with Python 3.7. (@artbycrunk in [issues/25](https://github.com/artbycrunk/vscode-maya/issues/25))
 

@@ -45,9 +45,14 @@ Command | Description
 --- | ---
 ```Maya: Send Python Code to Maya``` | Send Python code from current editor in Maya.
 ```Maya: Send MEL Code to Maya``` | Send MEL code from current editor in Maya.
+```Maya: Send Current Line to Maya``` | Send current line from current editor in Maya.
 
 You can also select a block of code in the editor 
 and ```Right-click -> Send Code to Maya```, this is based on the current working language (Mel or Python).
+
+If no space is in selected code, it prints the variable.
+
+When multiple lines of text are selected, first line leading spaces are not important.
 
 ## Update for Maya 2022 and above.
 
