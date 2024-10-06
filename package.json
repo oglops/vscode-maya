@@ -2,7 +2,7 @@
 	"name": "mayacode",
 	"displayName": "MayaCode",
 	"description": "A Visual Studio Code extension with support for coding for Maya.",
-	"version": "1.5.0",
+	"version": "1.5.1",
 	"publisher": "saviof",
 	"author": {
 		"name": "Savio Fernandes"
@@ -18,7 +18,7 @@
 	},
 	"icon": "icon.png",
 	"engines": {
-		"vscode": "^1.20.0"
+		"vscode": "^1.85.0"
 	},
 	"keywords": [
 		"maya",
@@ -35,7 +35,8 @@
 		"onLanguage:mel",
 		"onLanguage:python",
 		"onCommand:mayacode.sendPythonToMaya",
-		"onCommand:mayacode.sendMelToMaya"
+		"onCommand:mayacode.sendMelToMaya",
+		"onCommand:mayacode.sendCurrentLineToMaya"
 	],
 	"main": "./out/extension.js",
 	"scripts": {
@@ -44,14 +45,14 @@
 		"watch": "tsc -watch -p ./"
 	},
 	"devDependencies": {
-		"@types/node": "^12.12.0",
-		"@types/vscode": "^1.20.0",
-		"tslint": "^5.19.0",
-		"typescript": "^3.8.3",
-		"vscode-test": "^1.3.0"
+		"@types/node": "^22.7.4",
+		"@types/vscode": "^1.94.0",
+		"@vscode/test-electron": "^2.4.1",
+		"tslint": "^5.20.1",
+		"typescript": "~5.3.0"
 	},
 	"dependencies": {
-		"vscode-extension-telemetry": "^0.1.7"
+		"@vscode/extension-telemetry": "*"
 	},
 	"contributes": {
 		"languages": [
@@ -92,6 +93,11 @@
 			{
 				"command": "mayacode.sendMelToMaya",
 				"title": "Send MEL Code to Maya",
+				"category": "Maya"
+			},
+			{
+				"command": "mayacode.sendCurrentLineToMaya",
+				"title": "Send Current Line to Maya",
 				"category": "Maya"
 			}
 		],
@@ -137,6 +143,12 @@
 				"key": "alt+shift+m",
 				"mac": "ctrl+shift+m",
 				"when": "editorTextFocus && editorLangId == 'mel'"
+			},
+			{
+				"command": "mayacode.sendCurrentLineToMaya",
+				"key": "alt+shift+n",
+				"mac": "ctrl+shift+n",
+				"when": "editorTextFocus && (editorLangId == 'mel' || editorLangId == 'python')"
 			}
 		],
 		"menus": {
